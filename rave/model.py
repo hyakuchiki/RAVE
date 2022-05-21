@@ -8,6 +8,7 @@ from .core import amp_to_impulse_response, fft_convolve, get_beta_kl_cyclic_anne
 from .pqmf import CachedPQMF as PQMF
 from sklearn.decomposition import PCA
 from einops import rearrange
+from os import path
 
 from time import time
 
@@ -477,7 +478,8 @@ class RAVE(pl.LightningModule):
         self.automatic_optimization = False
 
         self.warmup = warmup
-        self.warmed_up = False
+        # save warmup state for resuming
+        self.register_buffer('warmed_up', torch.zeros(1, dtype=torch.bool), persistent=True)
         self.sr = sr
         self.mode = mode
 
@@ -563,19 +565,19 @@ class RAVE(pl.LightningModule):
             x = self.pqmf(x)
             p.tick("pqmf")
 
-        if self.warmed_up:  # EVAL ENCODER
+        if self.warmed_up.item():  # EVAL ENCODER
             self.encoder.eval()
 
         # ENCODE INPUT
         z, kl = self.reparametrize(*self.encoder(x))
         p.tick("encode")
 
-        if self.warmed_up:  # FREEZE ENCODER
+        if self.warmed_up.item():  # FREEZE ENCODER
             z = z.detach()
             kl = kl.detach()
 
         # DECODE LATENT
-        y = self.decoder(z, add_noise=self.warmed_up)
+        y = self.decoder(z, add_noise=self.warmed_up.item())
         p.tick("decode")
 
         # DISTANCE BETWEEN INPUT AND OUTPUT
@@ -595,7 +597,7 @@ class RAVE(pl.LightningModule):
         p.tick("loudness distance")
 
         feature_matching_distance = 0.
-        if self.warmed_up:  # DISCRIMINATION
+        if self.warmed_up.item():  # DISCRIMINATION
             feature_true = self.discriminator(x)
             feature_fake = self.discriminator(y)
 
@@ -645,7 +647,7 @@ class RAVE(pl.LightningModule):
         p.tick("gen loss compose")
 
         # OPTIMIZATION
-        if self.global_step % 2 and self.warmed_up:
+        if self.global_step % 2 and self.warmed_up.item():
             dis_opt.zero_grad()
             loss_dis.backward()
             dis_opt.step()
@@ -691,7 +693,7 @@ class RAVE(pl.LightningModule):
 
         mean, scale = self.encoder(x)
         z, _ = self.reparametrize(mean, scale)
-        y = self.decoder(z, add_noise=self.warmed_up)
+        y = self.decoder(z, add_noise=self.warmed_up.item())
 
         if self.pqmf is not None:
             x = self.pqmf.inverse(x)
@@ -708,10 +710,12 @@ class RAVE(pl.LightningModule):
         audio, z = list(zip(*out))
 
         if self.saved_step > self.warmup:
-            self.warmed_up = True
+            if not self.warmed_up.item():
+                self.warmed_up.data = torch.ones_like(self.warmed_up)
+                self.trainer.save_checkpoint(path.join(self.trainer.logger.log_dir, 'checkpoints', 'warmedup.ckpt'))
 
         # LATENT SPACE ANALYSIS
-        if not self.warmed_up:
+        if not self.warmed_up.item():
             z = torch.cat(z, 0)
             z = rearrange(z, "b c t -> (b t) c")
 
