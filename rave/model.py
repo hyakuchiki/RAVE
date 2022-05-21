@@ -10,6 +10,7 @@ from sklearn.decomposition import PCA
 from einops import rearrange
 from os import path
 
+from rave.aug import AudioDA
 from time import time
 
 import cached_conv as cc
@@ -391,12 +392,15 @@ class Discriminator(nn.Module):
 
 
 class StackDiscriminators(nn.Module):
-    def __init__(self, n_dis, *args, **kwargs):
+    def __init__(self, n_dis, aug_p=0.2, *args, **kwargs):
         super().__init__()
+        self.aug_p = aug_p
         self.discriminators = nn.ModuleList(
             [Discriminator(*args, **kwargs) for i in range(n_dis)], )
+        self.aug = AudioDA(aug_p) if aug_p>0 else nn.Identity()
 
     def forward(self, x):
+        x = self.aug(x) 
         features = []
         for layer in self.discriminators:
             features.append(layer(x))
@@ -425,7 +429,8 @@ class RAVE(pl.LightningModule):
                  max_kl=5e-1,
                  cropped_latent_size=0,
                  feature_match=True,
-                 sr=24000):
+                 sr=24000,
+                 disc_augp=0.2):
         super().__init__()
         self.save_hyperparameters()
 
@@ -465,6 +470,7 @@ class RAVE(pl.LightningModule):
             capacity=d_capacity,
             multiplier=d_multiplier,
             n_layers=d_n_layers,
+            aug_p = disc_augp,
         )
 
         self.idx = 0

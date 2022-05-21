@@ -60,6 +60,8 @@ if __name__ == "__main__":
         BATCH = 8
 
         NAME = None
+        # discriminator data augmentation prob
+        DISC_AUGP = 0.0
 
     args.parse_args()
 
@@ -85,6 +87,7 @@ if __name__ == "__main__":
         max_kl=args.MAX_KL,
         cropped_latent_size=args.CROPPED_LATENT_SIZE,
         feature_match=args.FEATURE_MATCH,
+        disc_augp=args.DISC_AUGP
     )
 
     x = torch.zeros(args.BATCH, 2**14)
