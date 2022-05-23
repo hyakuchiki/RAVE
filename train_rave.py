@@ -150,11 +150,11 @@ if __name__ == "__main__":
         use_gpu = 0
 
     val_check = {}
-    if len(train) >= args.VAL_EVERY:
-        val_check["val_check_interval"] = args.VAL_EVERY
-    else:
-        nepoch = args.VAL_EVERY // len(train)
-        val_check["check_val_every_n_epoch"] = nepoch
+    # if len(train) >= args.VAL_EVERY:
+    #     val_check["val_check_interval"] = args.VAL_EVERY
+    # else:
+    nepoch = max(1, args.VAL_EVERY // len(train))
+    val_check["check_val_every_n_epoch"] = nepoch
 
     trainer = pl.Trainer(
         logger=pl.loggers.TensorBoardLogger(path.join("runs", args.NAME),
